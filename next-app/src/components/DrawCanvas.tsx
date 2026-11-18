@@ -3,6 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import { canvasToDataUrl } from "@/lib/photo";
 
+/** Thin by default so 20–30 phone drawings stay line-art, not paint blobs on the hall collage. */
+const BRUSH_SIZES = [
+  { id: "thin", label: "Тонкая", width: 1.6 },
+  { id: "mid", label: "Средняя", width: 2.8 },
+  { id: "thick", label: "Толстая", width: 4.2 },
+] as const;
+
+type BrushId = (typeof BRUSH_SIZES)[number]["id"];
+
 type Props = {
   colors: string[];
   defaultColor?: string;
@@ -15,7 +24,9 @@ export function DrawCanvas({ colors, defaultColor, disabled, onSubmit }: Props) 
   const drawing = useRef(false);
   const last = useRef<{ x: number; y: number } | null>(null);
   const colorRef = useRef(defaultColor || colors[0] || "#FF2D6A");
+  const widthRef = useRef(BRUSH_SIZES[0].width);
   const [color, setColor] = useState(defaultColor || colors[0] || "#FF2D6A");
+  const [brushId, setBrushId] = useState<BrushId>("thin");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [hasStroke, setHasStroke] = useState(false);
@@ -25,11 +36,17 @@ export function DrawCanvas({ colors, defaultColor, disabled, onSubmit }: Props) 
   }, [color]);
 
   useEffect(() => {
+    const found = BRUSH_SIZES.find((b) => b.id === brushId) || BRUSH_SIZES[0];
+    widthRef.current = found.width;
+  }, [brushId]);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const parent = canvas.parentElement;
-    const w = Math.min(560, parent?.clientWidth || 360);
-    const h = Math.round(w * 0.85);
+    // Slightly smaller drawing field on phones → finer strokes on the hall wall
+    const w = Math.min(420, parent?.clientWidth || 360);
+    const h = Math.round(w * 0.9);
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
@@ -42,7 +59,6 @@ export function DrawCanvas({ colors, defaultColor, disabled, onSubmit }: Props) 
     ctx.fillRect(0, 0, w, h);
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.lineWidth = 4.5;
     setHasStroke(false);
   }, []);
 
@@ -51,11 +67,32 @@ export function DrawCanvas({ colors, defaultColor, disabled, onSubmit }: Props) 
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   }
 
+  function stroke(ctx: CanvasRenderingContext2D, from: { x: number; y: number }, to: { x: number; y: number }) {
+    ctx.strokeStyle = colorRef.current;
+    ctx.lineWidth = widthRef.current;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.stroke();
+  }
+
   function onDown(e: React.PointerEvent<HTMLCanvasElement>) {
     if (disabled || busy) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     drawing.current = true;
-    last.current = pos(e);
+    const p = pos(e);
+    last.current = p;
+    const ctx = canvasRef.current?.getContext("2d");
+    if (ctx) {
+      // Dot on tap so thin brush still registers
+      ctx.fillStyle = colorRef.current;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, widthRef.current / 2, 0, Math.PI * 2);
+      ctx.fill();
+      setHasStroke(true);
+    }
   }
 
   function onMove(e: React.PointerEvent<HTMLCanvasElement>) {
@@ -64,11 +101,7 @@ export function DrawCanvas({ colors, defaultColor, disabled, onSubmit }: Props) 
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx || !last.current) return;
     const p = pos(e);
-    ctx.strokeStyle = colorRef.current;
-    ctx.beginPath();
-    ctx.moveTo(last.current.x, last.current.y);
-    ctx.lineTo(p.x, p.y);
-    ctx.stroke();
+    stroke(ctx, last.current, p);
     last.current = p;
     setHasStroke(true);
   }
@@ -110,13 +143,16 @@ export function DrawCanvas({ colors, defaultColor, disabled, onSubmit }: Props) 
 
   return (
     <div className="space-y-3">
+      <p className="text-center text-xs leading-relaxed" style={{ color: "var(--mute)" }}>
+        Тонкая кисть по умолчанию — на экране зала поместятся 20–30 рисунков без «закраски».
+      </p>
       <div className="flex flex-wrap items-center justify-center gap-2">
         {colors.map((c) => (
           <button
             key={c}
             type="button"
             aria-label={`Цвет ${c}`}
-            className="h-9 w-9 rounded-full border-2 transition"
+            className="h-8 w-8 rounded-full border-2 transition"
             style={{
               background: c,
               borderColor: color === c ? "#fff" : "rgba(255,255,255,0.2)",
@@ -128,9 +164,22 @@ export function DrawCanvas({ colors, defaultColor, disabled, onSubmit }: Props) 
           />
         ))}
       </div>
+      <div className="flex justify-center gap-2">
+        {BRUSH_SIZES.map((b) => (
+          <button
+            key={b.id}
+            type="button"
+            className={brushId === b.id ? "btn-cyan px-3 py-2 text-sm" : "btn-ghost px-3 py-2 text-sm"}
+            disabled={disabled || busy}
+            onClick={() => setBrushId(b.id)}
+          >
+            {b.label}
+          </button>
+        ))}
+      </div>
       <canvas
         ref={canvasRef}
-        className="draw-surface w-full"
+        className="draw-surface mx-auto block w-full max-w-[420px]"
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp}

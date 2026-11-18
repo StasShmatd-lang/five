@@ -2,6 +2,16 @@
 
 import type { DrawingTile } from "@/lib/types";
 
+function gridClass(count: number) {
+  if (count <= 1) return "grid-cols-1";
+  if (count <= 4) return "grid-cols-2";
+  if (count <= 9) return "grid-cols-3";
+  if (count <= 16) return "grid-cols-4";
+  if (count <= 25) return "grid-cols-4 md:grid-cols-5";
+  // 20–30+ people on the hall wall
+  return "grid-cols-4 md:grid-cols-5 lg:grid-cols-6";
+}
+
 export function CollageGrid({
   drawings,
   large = false,
@@ -26,17 +36,12 @@ export function CollageGrid({
     );
   }
 
-  const cols =
-    drawings.length === 1
-      ? "grid-cols-1"
-      : drawings.length <= 4
-        ? "grid-cols-2"
-        : drawings.length <= 9
-          ? "grid-cols-3"
-          : "grid-cols-3 md:grid-cols-4";
+  const dense = drawings.length >= 12;
+  const gap = dense ? "gap-1.5 md:gap-2" : "gap-3 md:gap-4";
+  const captionPad = dense ? "px-2 py-1 text-xs" : "px-3 py-2 text-sm";
 
   return (
-    <div className={`grid ${cols} gap-3 md:gap-4`}>
+    <div className={`grid ${gridClass(drawings.length)} ${gap}`}>
       {drawings.map((d, i) => {
         const selected = selectedId === d.guestId;
         return (
@@ -68,11 +73,11 @@ export function CollageGrid({
               className={`w-full object-cover ${large ? "aspect-square" : "aspect-[4/3]"}`}
             />
             <figcaption
-              className="truncate px-3 py-2 text-sm font-semibold"
+              className={`truncate font-semibold ${captionPad}`}
               style={{ background: "#0e121a", color: "var(--snow)" }}
             >
               {d.name}
-              {selectable ? " · нажми" : ""}
+              {selectable && !dense ? " · нажми" : ""}
             </figcaption>
           </figure>
         );

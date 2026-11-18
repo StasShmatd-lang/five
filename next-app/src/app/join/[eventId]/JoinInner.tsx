@@ -148,7 +148,7 @@ export function JoinInner({ params }: { params: Promise<{ eventId: string }> }) 
               <div className="panel text-center">
                 <p className="display text-xl">Готовы?</p>
                 <p className="mt-2" style={{ color: "var(--mute)" }}>
-                  Ведущий даст старт. Можно рисовать разными цветами — бренд в палитре первым.
+                  Ведущий даст старт. Тонкая кисть и палитра — чтобы 20–30 рисунков читались на экране.
                 </p>
                 <div className="mt-3 flex flex-wrap justify-center gap-2">
                   {(state.palette || [state.brushColor]).slice(0, 6).map((c) => (
