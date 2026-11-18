@@ -24,7 +24,7 @@ export function DrawCanvas({ colors, defaultColor, disabled, onSubmit }: Props) 
   const drawing = useRef(false);
   const last = useRef<{ x: number; y: number } | null>(null);
   const colorRef = useRef(defaultColor || colors[0] || "#FF2D6A");
-  const widthRef = useRef(BRUSH_SIZES[0].width);
+  const widthRef = useRef<number>(BRUSH_SIZES[0].width);
   const [color, setColor] = useState(defaultColor || colors[0] || "#FF2D6A");
   const [brushId, setBrushId] = useState<BrushId>("thin");
   const [busy, setBusy] = useState(false);
