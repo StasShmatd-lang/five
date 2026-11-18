@@ -1,5 +1,6 @@
 import { customAlphabet } from "nanoid";
 import { sql } from "./db";
+import { DEFAULT_PALETTE } from "./types";
 import type { DrawingTile, EventData, Guest, Phase, PublicState } from "./types";
 
 const nano = customAlphabet("abcdefghjkmnpqrstuvwxyz23456789", 10);
@@ -48,6 +49,10 @@ function assertHost(ev: EventData, token?: string) {
   if (!token || token !== ev.hostToken) throw new Error("Нет доступа ведущего");
 }
 
+function assertScreen(ev: EventData, token?: string) {
+  if (!token || token !== ev.screenToken) throw new Error("Нет доступа экрана");
+}
+
 function sanitizePhoto(photo?: string) {
   if (!photo) return undefined;
   if (!photo.startsWith("data:image/")) throw new Error("Неверный формат изображения");
@@ -68,6 +73,12 @@ function sanitizeBrush(color?: string) {
   return c.toUpperCase();
 }
 
+function paletteFor(ev: EventData): string[] {
+  const brand = sanitizeBrush(ev.brushColor);
+  const rest = DEFAULT_PALETTE.filter((c) => c.toUpperCase() !== brand);
+  return [brand, ...rest];
+}
+
 function maybeExpireRound(ev: EventData): boolean {
   if (ev.phase !== "drawing" || !ev.roundEndsAt) return false;
   if (Date.now() < ev.roundEndsAt) return false;
@@ -81,8 +92,12 @@ function secondsLeft(ev: EventData): number | null {
   return Math.max(0, Math.ceil((ev.roundEndsAt - Date.now()) / 1000));
 }
 
+function activeGuests(ev: EventData) {
+  return ev.guests.filter((g) => !g.banned);
+}
+
 function drawingsOf(ev: EventData): DrawingTile[] {
-  return ev.guests
+  return activeGuests(ev)
     .filter((g): g is Guest & { drawingDataUrl: string; submittedAt: number } =>
       Boolean(g.drawingDataUrl && g.submittedAt),
     )
@@ -106,15 +121,18 @@ function toPublic(
     theme: ev.theme,
     referencePhoto: ev.referencePhoto,
     brushColor: ev.brushColor,
+    palette: paletteFor(ev),
     phase: ev.phase,
     roundSeconds: ev.roundSeconds,
     secondsLeft: secondsLeft(ev),
-    guestCount: ev.guests.length,
+    guestCount: activeGuests(ev).length,
     drawings: drawingsOf(ev),
     role,
   };
-  if (role === "host") {
+  if (role === "host" || role === "screen") {
     base.joinPath = `/join/${ev.id}?k=${ev.guestAccessToken}`;
+  }
+  if (role === "host") {
     base.screenPath = `/screen/${ev.id}#s=${ev.screenToken}`;
     base.guestAccessToken = ev.guestAccessToken;
   }
@@ -123,6 +141,7 @@ function toPublic(
       guestId: guest.id,
       name: guest.name,
       submitted: Boolean(guest.drawingDataUrl),
+      banned: Boolean(guest.banned),
     };
   }
   return base;
@@ -189,6 +208,7 @@ export async function hostAction(
     if (!ev.theme.trim()) throw new Error("Задайте тему рисунка");
     if (ev.phase === "setup") throw new Error("Сначала откройте лобби");
     for (const g of ev.guests) {
+      if (g.banned) continue;
       delete g.drawingDataUrl;
       delete g.submittedAt;
     }
@@ -202,17 +222,62 @@ export async function hostAction(
     ev.roundEndsAt = null;
   } else if (action === "resetLobby") {
     for (const g of ev.guests) {
+      if (g.banned) continue;
       delete g.drawingDataUrl;
       delete g.submittedAt;
     }
     ev.phase = "lobby";
     ev.roundEndsAt = null;
+  } else if (action === "eraseDrawing" || action === "banGuest") {
+    return moderate(ev, "host", action, payload);
   } else {
     throw new Error("Неизвестное действие");
   }
 
   await save(ev);
   return toPublic(ev, "host");
+}
+
+async function moderate(
+  ev: EventData,
+  role: "host" | "screen",
+  action: string,
+  payload: Record<string, unknown>,
+) {
+  const guestId = String(payload.guestId || "").trim();
+  const guest = ev.guests.find((g) => g.id === guestId);
+  if (!guest) throw new Error("Гость не найден");
+
+  if (action === "eraseDrawing") {
+    delete guest.drawingDataUrl;
+    delete guest.submittedAt;
+  } else if (action === "banGuest") {
+    guest.banned = true;
+    delete guest.drawingDataUrl;
+    delete guest.submittedAt;
+  } else {
+    throw new Error("Неизвестное действие");
+  }
+
+  await save(ev);
+  return toPublic(ev, role);
+}
+
+export async function screenAction(
+  eventId: string,
+  screenToken: string,
+  action: string,
+  payload: Record<string, unknown> = {},
+) {
+  const ev = await load(eventId);
+  if (!ev) throw new Error("Событие не найдено");
+  assertScreen(ev, screenToken);
+  maybeExpireRound(ev);
+
+  if (action === "eraseDrawing" || action === "banGuest") {
+    return moderate(ev, "screen", action, payload);
+  }
+  throw new Error("Неизвестное действие");
 }
 
 export async function joinGuest(eventId: string, accessToken: string, name: string) {
@@ -223,7 +288,7 @@ export async function joinGuest(eventId: string, accessToken: string, name: stri
 
   const clean = String(name || "").trim().slice(0, 40);
   if (clean.length < 1) throw new Error("Введите имя");
-  if (ev.guests.length >= MAX_GUESTS) throw new Error("Зал заполнен");
+  if (activeGuests(ev).length >= MAX_GUESTS) throw new Error("Зал заполнен");
   if (ev.phase === "collage") throw new Error("Раунд уже завершён");
 
   const guest: Guest = {
@@ -252,6 +317,7 @@ export async function submitDrawing(
 
   const guest = ev.guests.find((g) => g.id === guestId && g.token === guestToken);
   if (!guest) throw new Error("Нет доступа сессии");
+  if (guest.banned) throw new Error("Вас отключили от студии");
   if (ev.phase !== "drawing") throw new Error("Сейчас нельзя отправить рисунок");
   if (ev.roundEndsAt && Date.now() > ev.roundEndsAt) {
     ev.phase = "collage";
@@ -287,9 +353,7 @@ export async function getState(
     return toPublic(ev, "host");
   }
   if (role === "screen") {
-    if (!tokens.screenToken || tokens.screenToken !== ev.screenToken) {
-      throw new Error("Нет доступа экрана");
-    }
+    assertScreen(ev, tokens.screenToken);
     return toPublic(ev, "screen");
   }
   const guest = ev.guests.find(

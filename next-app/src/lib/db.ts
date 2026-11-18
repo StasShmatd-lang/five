@@ -3,22 +3,27 @@ import { PGlite } from "@electric-sql/pglite";
 import pg from "pg";
 
 const databaseUrl = process.env.DATABASE_URL?.trim() ?? "";
-let pool: pg.Pool | undefined;
-let local: Promise<PGlite> | undefined;
+
+type DbBag = {
+  pool?: pg.Pool;
+  local?: Promise<PGlite>;
+};
+const g = globalThis as unknown as { __syncDrawDb?: DbBag };
+g.__syncDrawDb ??= {};
 
 export async function sql<T = Record<string, unknown>>(
   text: string,
   params: unknown[] = [],
 ): Promise<T[]> {
   if (databaseUrl !== "") {
-    pool ??= new pg.Pool({ connectionString: databaseUrl, max: 5 });
-    return (await pool.query(text, params)).rows as T[];
+    g.__syncDrawDb!.pool ??= new pg.Pool({ connectionString: databaseUrl, max: 5 });
+    return (await g.__syncDrawDb!.pool!.query(text, params)).rows as T[];
   }
-  local ??= startLocal().catch((error: unknown) => {
-    local = undefined;
+  g.__syncDrawDb!.local ??= startLocal().catch((error: unknown) => {
+    g.__syncDrawDb!.local = undefined;
     throw error;
   });
-  return (await (await local).query<T>(text, params)).rows;
+  return (await (await g.__syncDrawDb!.local!).query<T>(text, params)).rows;
 }
 
 async function startLocal(): Promise<PGlite> {

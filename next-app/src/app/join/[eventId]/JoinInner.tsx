@@ -133,24 +133,44 @@ export function JoinInner({ params }: { params: Promise<{ eventId: string }> }) 
               />
             )}
 
-            {state.phase === "lobby" && (
+            {state.me?.banned && (
               <div className="panel text-center">
-                <p className="display text-xl">Готовы?</p>
+                <p className="display text-2xl" style={{ color: "var(--hot)" }}>
+                  Вас отключили
+                </p>
                 <p className="mt-2" style={{ color: "var(--mute)" }}>
-                  Ведущий сейчас даст старт. Кисть:{" "}
-                  <span
-                    className="inline-block h-3 w-3 rounded-full align-middle"
-                    style={{ background: state.brushColor }}
-                  />
+                  Ведущий убрал вас из студии
                 </p>
               </div>
             )}
 
-            {state.phase === "drawing" && !state.me?.submitted && (
-              <DrawCanvas color={state.brushColor} onSubmit={submitDrawing} />
+            {!state.me?.banned && state.phase === "lobby" && (
+              <div className="panel text-center">
+                <p className="display text-xl">Готовы?</p>
+                <p className="mt-2" style={{ color: "var(--mute)" }}>
+                  Ведущий даст старт. Можно рисовать разными цветами — бренд в палитре первым.
+                </p>
+                <div className="mt-3 flex flex-wrap justify-center gap-2">
+                  {(state.palette || [state.brushColor]).slice(0, 6).map((c) => (
+                    <span
+                      key={c}
+                      className="inline-block h-4 w-4 rounded-full"
+                      style={{ background: c, outline: c === "#FFFFFF" ? "1px solid #999" : undefined }}
+                    />
+                  ))}
+                </div>
+              </div>
             )}
 
-            {state.me?.submitted && (
+            {!state.me?.banned && state.phase === "drawing" && !state.me?.submitted && (
+              <DrawCanvas
+                colors={state.palette?.length ? state.palette : [state.brushColor]}
+                defaultColor={state.brushColor}
+                onSubmit={submitDrawing}
+              />
+            )}
+
+            {!state.me?.banned && state.me?.submitted && (
               <div className="panel anim-tile text-center">
                 <p className="display text-2xl" style={{ color: "var(--acid)" }}>
                   На экране!

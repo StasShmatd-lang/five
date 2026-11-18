@@ -4,18 +4,25 @@ import { useEffect, useRef, useState } from "react";
 import { canvasToDataUrl } from "@/lib/photo";
 
 type Props = {
-  color: string;
+  colors: string[];
+  defaultColor?: string;
   disabled?: boolean;
   onSubmit: (dataUrl: string) => Promise<void>;
 };
 
-export function DrawCanvas({ color, disabled, onSubmit }: Props) {
+export function DrawCanvas({ colors, defaultColor, disabled, onSubmit }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawing = useRef(false);
   const last = useRef<{ x: number; y: number } | null>(null);
+  const colorRef = useRef(defaultColor || colors[0] || "#FF2D6A");
+  const [color, setColor] = useState(defaultColor || colors[0] || "#FF2D6A");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [hasStroke, setHasStroke] = useState(false);
+
+  useEffect(() => {
+    colorRef.current = color;
+  }, [color]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -57,7 +64,7 @@ export function DrawCanvas({ color, disabled, onSubmit }: Props) {
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx || !last.current) return;
     const p = pos(e);
-    ctx.strokeStyle = color;
+    ctx.strokeStyle = colorRef.current;
     ctx.beginPath();
     ctx.moveTo(last.current.x, last.current.y);
     ctx.lineTo(p.x, p.y);
@@ -103,6 +110,24 @@ export function DrawCanvas({ color, disabled, onSubmit }: Props) {
 
   return (
     <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        {colors.map((c) => (
+          <button
+            key={c}
+            type="button"
+            aria-label={`Цвет ${c}`}
+            className="h-9 w-9 rounded-full border-2 transition"
+            style={{
+              background: c,
+              borderColor: color === c ? "#fff" : "rgba(255,255,255,0.2)",
+              boxShadow: color === c ? "0 0 0 2px rgba(46,230,214,0.55)" : undefined,
+              outline: c.toUpperCase() === "#FFFFFF" ? "1px solid rgba(0,0,0,0.25)" : undefined,
+            }}
+            disabled={disabled || busy}
+            onClick={() => setColor(c)}
+          />
+        ))}
+      </div>
       <canvas
         ref={canvasRef}
         className="draw-surface w-full"

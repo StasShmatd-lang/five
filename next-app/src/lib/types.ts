@@ -6,6 +6,7 @@ export type Guest = {
   token: string;
   drawingDataUrl?: string;
   submittedAt?: number;
+  banned?: boolean;
 };
 
 export type DrawingTile = {
@@ -38,14 +39,26 @@ export type PublicState = {
   theme: string;
   referencePhoto?: string;
   brushColor: string;
+  palette: string[];
   phase: Phase;
   roundSeconds: number;
   secondsLeft: number | null;
   guestCount: number;
   drawings: DrawingTile[];
   role: "host" | "guest" | "screen";
-  me?: { guestId: string; name: string; submitted: boolean };
+  me?: { guestId: string; name: string; submitted: boolean; banned: boolean };
   joinPath?: string;
   screenPath?: string;
   guestAccessToken?: string;
 };
+
+export const DEFAULT_PALETTE = [
+  "#FF2D6A",
+  "#2EE6D6",
+  "#D4FF3A",
+  "#1A1A1A",
+  "#FF8A3D",
+  "#6B5CFF",
+  "#FFFFFF",
+  "#3D7EFF",
+];

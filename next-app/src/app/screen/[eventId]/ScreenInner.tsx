@@ -3,12 +3,20 @@
 import { use, useEffect, useMemo, useState } from "react";
 import { BrandFooter } from "@/components/BrandFooter";
 import { CollageGrid } from "@/components/CollageGrid";
+import { HallQr } from "@/components/HallQr";
 import { InkAtmosphere } from "@/components/InkAtmosphere";
+import { useLinkBase } from "@/hooks/useLinkBase";
 import { usePollState } from "@/hooks/usePollState";
+import { readJson } from "@/lib/apiClient";
+import type { DrawingTile, PublicState } from "@/lib/types";
 
 export function ScreenInner({ params }: { params: Promise<{ eventId: string }> }) {
   const { eventId } = use(params);
+  const base = useLinkBase();
   const [screenToken, setScreenToken] = useState("");
+  const [selected, setSelected] = useState<DrawingTile | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [modError, setModError] = useState<string | null>(null);
 
   useEffect(() => {
     const hash = window.location.hash || "";
@@ -29,7 +37,43 @@ export function ScreenInner({ params }: { params: Promise<{ eventId: string }> }
     () => (screenToken ? { eventId, role: "screen" as const, token: screenToken } : null),
     [eventId, screenToken],
   );
-  const { state, error } = usePollState(auth, Boolean(screenToken));
+  const { state, setState, error } = usePollState(auth, Boolean(screenToken));
+  const joinUrl = state?.joinPath ? `${base}${state.joinPath}` : "";
+
+  useEffect(() => {
+    if (!selected || !state) return;
+    if (!state.drawings.some((d) => d.guestId === selected.guestId)) {
+      setSelected(null);
+    }
+  }, [state, selected]);
+
+  async function moderate(action: "eraseDrawing" | "banGuest") {
+    if (!selected) return;
+    setBusy(true);
+    setModError(null);
+    try {
+      const res = await fetch("/api/screen", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${screenToken}`,
+        },
+        body: JSON.stringify({
+          eventId,
+          action,
+          payload: { guestId: selected.guestId },
+        }),
+      });
+      const data = await readJson<PublicState & { error?: string }>(res);
+      if (!res.ok) throw new Error(data.error || "Ошибка");
+      setState(data);
+      setSelected(null);
+    } catch (e) {
+      setModError(e instanceof Error ? e.message : "Ошибка");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   if (!screenToken) {
     return (
@@ -52,9 +96,12 @@ export function ScreenInner({ params }: { params: Promise<{ eventId: string }> }
               {state?.theme || "Готовим тему…"}
             </h1>
           </div>
-          <div className="text-right">
+          <div className="flex flex-col items-end gap-3">
             {state?.phase === "drawing" && (
-              <div className="anim-timer inline-block rounded-full border px-8 py-4" style={{ borderColor: "var(--hot)" }}>
+              <div
+                className="anim-timer inline-block rounded-full border px-8 py-4"
+                style={{ borderColor: "var(--hot)" }}
+              >
                 <span className="timer-big text-6xl md:text-8xl">{state.secondsLeft ?? "—"}</span>
               </div>
             )}
@@ -68,9 +115,10 @@ export function ScreenInner({ params }: { params: Promise<{ eventId: string }> }
                 Коллаж
               </p>
             )}
-            <p className="mt-3 text-lg" style={{ color: "var(--mute)" }}>
+            <p className="text-lg" style={{ color: "var(--mute)" }}>
               {state?.drawings.length ?? 0} / {state?.guestCount ?? 0} рисунков
             </p>
+            {joinUrl && <HallQr url={joinUrl} large size={180} label="Войти с телефона" />}
           </div>
         </header>
 
@@ -88,14 +136,33 @@ export function ScreenInner({ params }: { params: Promise<{ eventId: string }> }
 
         <div className="flex-1">
           {state?.phase === "lobby" && (
-            <div className="flex h-full min-h-[40vh] items-center justify-center">
-              <p className="display anim-rise text-center text-4xl md:text-6xl" style={{ color: "var(--mute)" }}>
+            <div className="flex h-full min-h-[30vh] flex-col items-center justify-center gap-8">
+              <p
+                className="display anim-rise text-center text-4xl md:text-6xl"
+                style={{ color: "var(--mute)" }}
+              >
                 Присоединяйтесь с телефона
               </p>
+              {joinUrl && (
+                <div className="md:hidden">
+                  <HallQr url={joinUrl} large size={200} />
+                </div>
+              )}
             </div>
           )}
           {(state?.phase === "drawing" || state?.phase === "collage") && (
-            <CollageGrid drawings={state.drawings} large />
+            <>
+              <p className="mb-3 text-sm" style={{ color: "var(--mute)" }}>
+                Нажмите на рисунок, чтобы увидеть автора, стереть или забанить
+              </p>
+              <CollageGrid
+                drawings={state.drawings}
+                large
+                selectable
+                selectedId={selected?.guestId}
+                onSelect={setSelected}
+              />
+            </>
           )}
           {state?.phase === "setup" && (
             <p className="text-center text-2xl" style={{ color: "var(--mute)" }}>
@@ -104,13 +171,63 @@ export function ScreenInner({ params }: { params: Promise<{ eventId: string }> }
           )}
         </div>
 
-        {error && (
+        {(error || modError) && (
           <p className="mt-4 text-center" style={{ color: "var(--hot)" }}>
-            {error}
+            {modError || error}
           </p>
         )}
         <BrandFooter compact />
       </div>
+
+      {selected && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={() => !busy && setSelected(null)}
+        >
+          <div
+            className="panel w-full max-w-md space-y-4 anim-rise"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--mute)" }}>
+              Автор на экране
+            </p>
+            <h2 className="display text-3xl">{selected.name}</h2>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={selected.drawingDataUrl}
+              alt={selected.name}
+              className="max-h-56 w-full rounded-2xl object-contain"
+              style={{ background: "var(--paper)" }}
+            />
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                className="btn-acid flex-1"
+                disabled={busy}
+                onClick={() => moderate("eraseDrawing")}
+              >
+                Стереть рисунок
+              </button>
+              <button
+                type="button"
+                className="btn-hot flex-1"
+                disabled={busy}
+                onClick={() => moderate("banGuest")}
+              >
+                Забанить
+              </button>
+              <button
+                type="button"
+                className="btn-ghost w-full"
+                disabled={busy}
+                onClick={() => setSelected(null)}
+              >
+                Закрыть
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
