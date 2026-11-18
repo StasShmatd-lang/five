@@ -172,13 +172,14 @@ export default function HostPage({ params }: { params: Promise<{ eventId: string
               </div>
               <div>
                 <label className="label" htmlFor="sec">
-                  Таймер (сек)
+                  Таймер (сек, до 5 мин)
                 </label>
                 <input
                   id="sec"
                   type="number"
                   min={15}
-                  max={60}
+                  max={300}
+                  step={15}
                   className="field"
                   value={roundSeconds}
                   onChange={(e) => setRoundSeconds(Number(e.target.value) || 30)}

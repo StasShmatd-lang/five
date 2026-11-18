@@ -190,7 +190,7 @@ export async function hostAction(
       ev.theme = payload.theme.trim().slice(0, 120);
     }
     if (typeof payload.roundSeconds === "number") {
-      ev.roundSeconds = Math.min(60, Math.max(15, Math.round(payload.roundSeconds)));
+      ev.roundSeconds = Math.min(300, Math.max(15, Math.round(payload.roundSeconds)));
     }
     if (typeof payload.brushColor === "string") {
       ev.brushColor = sanitizeBrush(payload.brushColor);
